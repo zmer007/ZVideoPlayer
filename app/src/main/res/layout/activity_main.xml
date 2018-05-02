@@ -10,4 +10,9 @@
         android:layout_height="wrap_content"
         android:onClick="open"/>
 
+    <Button
+        android:text="gson"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:onClick="parse"/>
 </LinearLayout>

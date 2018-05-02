@@ -3,19 +3,20 @@ package com.zplay.playable.zplayvideoplayer;
 import android.app.Activity;
 import android.graphics.SurfaceTexture;
 import android.media.MediaPlayer;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Message;
 import android.support.annotation.Nullable;
 import android.util.Log;
 import android.view.Surface;
 import android.view.TextureView;
-import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.FrameLayout.LayoutParams;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 
 /**
  * Description:
@@ -33,13 +34,14 @@ public class PlayableActivity extends Activity implements
     private static final String TAG = "PlayableActivity";
 
     private MediaPlayer mediaPlayer;
-    private VideoFace videoFace;
-    private GestureDetectorView gestureDetectorView;
     private Surface surface;
 
     // 从服务器获得视频宽高
     private static final int VIDEO_WIDTH = 852;
     private static final int VIDEO_HEIGHT = 480;
+
+    private Monitoring monitoring;
+    private TimeHandler timeHandler;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -48,50 +50,60 @@ public class PlayableActivity extends Activity implements
         FrameLayout rootView = new FrameLayout(this);
         rootView.setBackgroundColor(0xffffffff);
         rootView.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
-        videoFace = new VideoFace(this, new VideoFace.VideoInfo(VIDEO_WIDTH, VIDEO_HEIGHT));
+        VideoFace videoFace = new VideoFace(this, new VideoFace.VideoInfo(VIDEO_WIDTH, VIDEO_HEIGHT));
         rootView.addView(videoFace);
-
-        gestureDetectorView = new GestureDetectorView(this, videoFace.getFrameRect());
+        GestureDetectorView gestureDetectorView = new GestureDetectorView(this, videoFace.getFrameRect());
         gestureDetectorView.setGestureListener(mGestureListener);
         rootView.addView(gestureDetectorView);
-
         setContentView(rootView);
 
         videoFace.setSurfaceTextureListener(this);
         mediaPlayer = new MediaPlayer();
+
+        monitoring = MonitoringParser.fromeJson();
+        timeHandler = new TimeHandler(this);
     }
 
     private GestureDetectorView.ZGestureListener mGestureListener = new GestureDetectorView.ZGestureListener() {
         @Override
         public void onSweepLeft(float startX, float startY) {
-            Log.d(TAG, "onSweepLeft: ");
+            performAction(startX, startY, ZGesture.GESTURE_SWEEP_LEFT);
         }
 
         @Override
         public void onSweepRight(float startX, float startY) {
-            Log.d(TAG, "onSweepRight: ");
+            performAction(startX, startY, ZGesture.GESTURE_SWEEP_RIGHT);
         }
 
         @Override
         public void onSweepUp(float startX, float startY) {
-            Log.d(TAG, "onSweepUp: ");
+            performAction(startX, startY, ZGesture.GESTURE_SWEEP_UP);
         }
 
         @Override
         public void onSweepDown(float startX, float startY) {
-            Log.d(TAG, "onSweepDown: ");
+            performAction(startX, startY, ZGesture.GESTURE_SWEEP_DOWN);
         }
 
         @Override
         public void onClick(float startX, float startY) {
-            Log.d(TAG, "onClick: ");
+            performAction(startX, startY, ZGesture.GESTURE_CLICK);
         }
 
         @Override
         public void onClick(float startX, float startY, float times) {
-            Log.d(TAG, "onClick: ");
+            performAction(startX, startY, ZGesture.GESTURE_CLICKS);
         }
     };
+
+    private void performAction(float normalizedX, float normalizedY, int gesture) {
+        int nextPoint = monitoring.performAction(timeHandler.getCurrentPoint(), normalizedX, normalizedY, gesture);
+        if (nextPoint != Monitoring.INVALID) {
+            timeHandler.refreshStartTime(nextPoint);
+            Log.d(TAG, "performAction: seek " + nextPoint);
+            mediaPlayer.seekTo(nextPoint);
+        }
+    }
 
     private void loadMedia(String path) {
         try {
@@ -144,6 +156,7 @@ public class PlayableActivity extends Activity implements
     @Override
     public void onCompletion(MediaPlayer mp) {
         Log.d(TAG, "onCompletion: ");
+        timeHandler.stopClick();
     }
 
     @Override
@@ -180,4 +193,85 @@ public class PlayableActivity extends Activity implements
         }
         return true;
     }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        try {
+            mediaPlayer.start();
+            timeHandler.refreshStartTime(mediaPlayer.getCurrentPosition());
+            timeHandler.startClick();
+        } catch (IllegalStateException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        timeHandler.stopClick();
+        if (mediaPlayer.isPlaying()) {
+            mediaPlayer.pause();
+        }
+    }
+
+    void onMediaPlayerProgress(int currentPoint) {
+        Log.d(TAG, "onMediaPlayerProgress: ");
+        int nextStep = monitoring.nextPoint(currentPoint);
+        if (nextStep == Monitoring.INVALID) {
+            return;
+        }
+
+        if (nextStep == Monitoring.PAUSE) {
+            timeHandler.stopClick();
+            mediaPlayer.pause();
+            return;
+        }
+
+        mediaPlayer.seekTo(nextStep);
+        timeHandler.refreshStartTime(nextStep);
+        Log.d(TAG, "onMediaPlayerProgress: loop");
+    }
+
+
+    static class TimeHandler extends Handler {
+
+        private WeakReference<PlayableActivity> paRef;
+        long startTime;
+        boolean stopNextExe;
+
+        TimeHandler(PlayableActivity pa) {
+            paRef = new WeakReference<>(pa);
+        }
+
+        @Override
+        public void handleMessage(Message msg) {
+            super.handleMessage(msg);
+            PlayableActivity pa = paRef.get();
+            if (pa == null || stopNextExe) {
+                return;
+            }
+
+            pa.onMediaPlayerProgress((int) (System.currentTimeMillis() - startTime));
+            sendEmptyMessageDelayed(0, 16);
+        }
+
+        void refreshStartTime(int currentPoint) {
+            startTime = System.currentTimeMillis() - currentPoint;
+        }
+
+        void startClick() {
+            stopNextExe = false;
+            sendEmptyMessage(0);
+        }
+
+        void stopClick() {
+            stopNextExe = true;
+        }
+
+        int getCurrentPoint() {
+            return (int) (System.currentTimeMillis() - startTime);
+        }
+    }
+
 }

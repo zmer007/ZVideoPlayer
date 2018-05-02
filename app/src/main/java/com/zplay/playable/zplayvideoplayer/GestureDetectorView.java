@@ -2,17 +2,17 @@ package com.zplay.playable.zplayvideoplayer;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
-import android.graphics.Rect;
 import android.graphics.RectF;
 import android.support.annotation.Nullable;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.MotionEvent;
-import android.view.TextureView;
 import android.view.View;
 import android.widget.FrameLayout;
 
-import static com.zplay.playable.zplayvideoplayer.ZGesture.*;
+import static com.zplay.playable.zplayvideoplayer.ZGesture.GESTURE_CLICK;
+import static com.zplay.playable.zplayvideoplayer.ZGesture.GESTURE_NONE;
+import static com.zplay.playable.zplayvideoplayer.ZGesture.GESTURE_SWEEP;
 import static java.lang.Math.abs;
 
 /**
@@ -28,6 +28,9 @@ public final class GestureDetectorView extends View {
     private float mDownY;
     private long mDownTime;
     private long mEndTime;
+
+    private int width;
+    private int height;
 
     private float mValidSweepDelta;
 
@@ -45,7 +48,10 @@ public final class GestureDetectorView extends View {
         super(context);
         mValidSweepDelta = DEFAULT_SWEEP_DELTA * getResources().getDisplayMetrics().density;
 
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams((int) dstRect.width(), (int) dstRect.height());
+        width = (int) dstRect.width();
+        height = (int) dstRect.height();
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
         params.topMargin = (int) dstRect.top;
         params.leftMargin = (int) dstRect.left;
         setBackgroundColor(0x8800ff00);
@@ -60,7 +66,6 @@ public final class GestureDetectorView extends View {
     @SuppressLint("ClickableViewAccessibility")
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        Log.d(TAG, "onTouchEvent: " + event.getY());
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
                 mDownX = event.getX();
@@ -85,7 +90,8 @@ public final class GestureDetectorView extends View {
     private void parseGesture(float downX, float downY, float upX, float upY, long duration) {
         if (isClick(downX, downY, upX, upY, duration)) {
             mLastGesture = GESTURE_CLICK;
-            mGestureListener.onClick(downX, downY);
+            Log.d(TAG, "cccccccccccccccc: ");
+            mGestureListener.onClick(normalizedX(downX), normalizedY(downY));
         } else if (isSweep(downX, downY, upX, upY)) {
             mLastGesture = GESTURE_SWEEP;
             performSweep(downX, downY, upX, upY);
@@ -103,15 +109,15 @@ public final class GestureDetectorView extends View {
     private void performSweep(float dx, float dy, float ux, float uy) {
         if (abs(abs(dx) - abs(ux)) > abs(abs(dy) - abs(uy))) {
             if (ux - dx > 0) {
-                mGestureListener.onSweepRight(dx, dy);
+                mGestureListener.onSweepRight(normalizedX(dx), normalizedY(dy));
             } else {
-                mGestureListener.onSweepLeft(dx, dy);
+                mGestureListener.onSweepLeft(normalizedX(dx), normalizedY(dy));
             }
         } else {
             if (uy - dy > 0) {
-                mGestureListener.onSweepDown(dx, dy);
+                mGestureListener.onSweepDown(normalizedX(dx), normalizedY(dy));
             } else {
-                mGestureListener.onSweepUp(dx, dy);
+                mGestureListener.onSweepUp(normalizedX(dx), normalizedY(dy));
             }
         }
     }
@@ -122,6 +128,14 @@ public final class GestureDetectorView extends View {
 
     void setValidSweepDelta(float delta) {
         mValidSweepDelta = delta * getResources().getDisplayMetrics().density;
+    }
+
+    float normalizedX(float x) {
+        return x / width;
+    }
+
+    float normalizedY(float y) {
+        return y / height;
     }
 
     interface ZGestureListener {

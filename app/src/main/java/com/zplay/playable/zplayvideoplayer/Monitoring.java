@@ -3,74 +3,77 @@ package com.zplay.playable.zplayvideoplayer;
 import android.graphics.RectF;
 
 import static com.zplay.playable.zplayvideoplayer.ZGesture.GESTURE_CLICK;
+import static com.zplay.playable.zplayvideoplayer.ZGesture.GESTURE_SWEEP_DOWN;
+import static com.zplay.playable.zplayvideoplayer.ZGesture.GESTURE_SWEEP_LEFT;
+import static com.zplay.playable.zplayvideoplayer.ZGesture.GESTURE_SWEEP_RIGHT;
+import static com.zplay.playable.zplayvideoplayer.ZGesture.GESTURE_SWEEP_UP;
 import static java.lang.Math.abs;
 
-public class Monitoring {
-    final int screenOrientation;
-    final float videoDuration;
-    CtrlAction[] ctrls;
+class Monitoring {
+    static final int INVALID = -1;
+    static final int PAUSE = 0;
 
-    Monitoring() {
-        screenOrientation = 0;
-        videoDuration = 31.2f * 1000;
-        ctrls = new CtrlAction[3];
+    private float videoDuration;
+    private CtrlAction[] ctrls;
 
-        Event[] e0 = new Event[1];
-        e0[0] = new Event(new Block(0f, 0f, 1f, 0.4625832093828485f), GESTURE_CLICK);
-        ctrls[0] = new CtrlAction(0, new Span(0.056572788065843614f, 0.1337448559670782f, 0.22016460905349794f), e0);
-
-        Event[] e1 = new Event[1];
-        e1[0] = new Event(new Block(0f, 0.5103021140669577f, 1f, 1f), GESTURE_CLICK);
-        ctrls[1] = new CtrlAction(1, new Span(0.2561612654320988f, 0.31584362139917693f, 0.4495884773662551f), e1);
-
-        Event[] e2 = new Event[1];
-        e2[0] = new Event(new Block(0f, 0f, 1f, 0.47350710784911365f), GESTURE_CLICK);
-        ctrls[1] = new CtrlAction(1, new Span(0.5720048868312757f, 0.6368312757201646f, 0.8930041152263375f), e2);
+    Monitoring(float videoDuration, CtrlAction[] ctrls) {
+        this.videoDuration = videoDuration;
+        this.ctrls = ctrls;
     }
 
-    int nextSeek(int currentPoint, float downX, float downY, int gesture) {
-        final int invalid = -1;
-        int ctrlIndex = getCtrlsIndex(currentPoint);
-        if (ctrlIndex == invalid) {
-            return invalid;
+    int nextPoint(int currentPoint) {
+        float current = currentPoint * 0.001f / videoDuration;
+        if (ctrls == null || ctrls.length == 0) {
+            return INVALID;
         }
 
-        CtrlAction ca = ctrls[ctrlIndex];
-        for (int i = 0; i < ca.events.length; i++) {
-            Event e = ca.events[i];
-            if (e.block.contains(downX, downY) && e.gesture == gesture) {
-                ca.passed = true;
-                return (int) ca.span.end;
+        for (CtrlAction ca : ctrls) {
+            if (ca.passed) {
+                continue;
+            }
+
+            if (ca.span.end < current) {
+                if (ca.span.isLoop()) {
+                    return (int) (ca.span.loopStart * videoDuration * 1000);
+                } else {
+                    return PAUSE;
+                }
             }
         }
-        return invalid;
+        return INVALID;
+    }
+
+    int performAction(int currentPoint, float x, float y, int gesture) {
+        float normalizedTime = currentPoint * 0.001f / videoDuration;
+        if (ctrls == null || ctrls.length == 0) {
+            return INVALID;
+        }
+
+        for (CtrlAction ca : ctrls) {
+            if (ca.passed) {
+                continue;
+            }
+
+            if (ca.span.contains(normalizedTime)) {
+                for (Event e : ca.events) {
+                    if (e.getGesture() == gesture && e.contains(x, y)) {
+                        ca.passed = true;
+                        return (int) (ca.span.end * videoDuration * 1000);
+                    }
+                }
+            }
+        }
+        return INVALID;
     }
 
     static boolean floatEquals(float f1, float f2) {
         return abs(f1 - f2) < 0.00001;
     }
 
-    private int getCtrlsIndex(int currentPoint) {
-        int index = -1;
-        if (ctrls == null) {
-            return index;
-        }
-        for (int i = 0; i < ctrls.length; i++) {
-            CtrlAction ca = ctrls[i];
-            if (ca.passed){
-                continue;
-            }
-            if (ca.span.start <= currentPoint && currentPoint < ca.span.end) {
-                return i;
-            }
-        }
-        return index;
-    }
-
     static class CtrlAction {
-        final int id;
-        final Span span;
-        final Event[] events;
+        int id;
+        Span span;
+        Event[] events;
         boolean passed;
 
         CtrlAction(int id, Span span, Event[] events) {
@@ -81,9 +84,9 @@ public class Monitoring {
     }
 
     static class Span {
-        final float start;
-        final float loopStart;
-        final float end;
+        float start;
+        float loopStart;
+        float end;
 
         Span(float start, float loopStart, float end) {
             this.start = start;
@@ -92,30 +95,53 @@ public class Monitoring {
         }
 
         boolean isLoop() {
-            return floatEquals(start, loopStart);
+            return !floatEquals(start, loopStart);
+        }
+
+        boolean contains(float normalizedTime) {
+            return start <= normalizedTime && normalizedTime < end;
         }
     }
 
     static class Event {
-        final Block block;
-        final int gesture;
+        float[] block;
+        int[] action;
+        RectF rectF;
 
-        Event(Block block, int gesture) {
-            this.block = block;
-            this.gesture = gesture;
+        int getGesture() {
+            if (action == null || action.length < 9) {
+                return INVALID;
+            }
+
+            if (action[0] != 0) {
+                return INVALID;
+            } else if (action[1] != 0) {
+                return GESTURE_SWEEP_UP;
+            } else if (action[2] != 0) {
+                return INVALID;
+            } else if (action[3] != 0) {
+                return GESTURE_SWEEP_LEFT;
+            } else if (action[4] != 0) {
+                return GESTURE_CLICK;
+            } else if (action[5] != 0) {
+                return GESTURE_SWEEP_RIGHT;
+            } else if (action[6] != 0) {
+                return INVALID;
+            } else if (action[7] != 0) {
+                return GESTURE_SWEEP_DOWN;
+            } else if (action[8] != 0) {
+                return INVALID;
+            }
+            return INVALID;
         }
-    }
 
-    static class Block {
-        final RectF rectF;
+        boolean contains(float normalizedX, float normalizedY) {
+            if (rectF == null && block != null && block.length == 4) {
+                rectF = new RectF(block[0], block[1], block[2], block[3]);
+            }
 
-        Block(float l, float t, float r, float b) {
-            rectF = new RectF();
-            rectF.set(l, t, r, b);
-        }
 
-        boolean contains(float x, float y) {
-            return rectF.contains(x, y);
+            return rectF != null && rectF.contains(normalizedX, normalizedY);
         }
     }
 }
