@@ -1,6 +1,7 @@
 package com.zplay.playable.zplayvideoplayer;
 
 import android.graphics.RectF;
+import android.util.Log;
 
 import static com.zplay.playable.zplayvideoplayer.ZGesture.GESTURE_CLICK;
 import static com.zplay.playable.zplayvideoplayer.ZGesture.GESTURE_SWEEP_DOWN;
@@ -58,6 +59,7 @@ class Monitoring {
                 for (Event e : ca.events) {
                     if (e.getGesture() == gesture && e.contains(x, y)) {
                         ca.passed = true;
+                        Log.d("paCCC", "performAction: " + ca.span.end + ":"+videoDuration+" = " + (int) (ca.span.end * videoDuration * 1000));
                         return (int) (ca.span.end * videoDuration * 1000);
                     }
                 }

@@ -2,7 +2,10 @@ package com.zplay.playable.zplayvideoplayer;
 
 import android.app.Activity;
 import android.graphics.SurfaceTexture;
+import android.media.MediaMetadataRetriever;
 import android.media.MediaPlayer;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -18,6 +21,8 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 
+import static android.media.MediaPlayer.SEEK_CLOSEST;
+
 /**
  * Description:
  * <p>
@@ -30,14 +35,14 @@ public class PlayableActivity extends Activity implements
         MediaPlayer.OnCompletionListener,
         MediaPlayer.OnInfoListener,
         TextureView.SurfaceTextureListener {
-    private static final String VIDEO_PATH = Environment.getExternalStorageDirectory() + File.separator + "littlefox.mp4";
+    static final String VIDEO_PATH = Environment.getExternalStorageDirectory() + File.separator + "littlefox.mp4";
     private static final String TAG = "PlayableActivity";
 
     private MediaPlayer mediaPlayer;
     private Surface surface;
 
     // 从服务器获得视频宽高
-    private static final int VIDEO_WIDTH = 852;
+    private static final int VIDEO_WIDTH = 854;
     private static final int VIDEO_HEIGHT = 480;
 
     private Monitoring monitoring;
@@ -48,7 +53,7 @@ public class PlayableActivity extends Activity implements
         super.onCreate(savedInstanceState);
 
         FrameLayout rootView = new FrameLayout(this);
-        rootView.setBackgroundColor(0xffffffff);
+        rootView.setBackgroundColor(0xff000000);
         rootView.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
         VideoFace videoFace = new VideoFace(this, new VideoFace.VideoInfo(VIDEO_WIDTH, VIDEO_HEIGHT));
         rootView.addView(videoFace);
@@ -60,8 +65,15 @@ public class PlayableActivity extends Activity implements
         videoFace.setSurfaceTextureListener(this);
         mediaPlayer = new MediaPlayer();
 
-        monitoring = MonitoringParser.fromeJson();
+        monitoring = MonitoringParser.fromJson();
         timeHandler = new TimeHandler(this);
+
+        Uri uri = Uri.parse(VIDEO_PATH);
+        MediaMetadataRetriever mmr = new MediaMetadataRetriever();
+        mmr.setDataSource(this, uri);
+        String durationStr = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+        int millSecond = Integer.parseInt(durationStr);
+        Log.d(TAG, "onCreate: " + millSecond);
     }
 
     private GestureDetectorView.ZGestureListener mGestureListener = new GestureDetectorView.ZGestureListener() {
@@ -100,8 +112,9 @@ public class PlayableActivity extends Activity implements
         int nextPoint = monitoring.performAction(timeHandler.getCurrentPoint(), normalizedX, normalizedY, gesture);
         if (nextPoint != Monitoring.INVALID) {
             timeHandler.refreshStartTime(nextPoint);
-            Log.d(TAG, "performAction: seek " + nextPoint);
-            mediaPlayer.seekTo(nextPoint);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                mediaPlayer.seekTo(nextPoint, SEEK_CLOSEST);
+            }
         }
     }
 
@@ -140,7 +153,8 @@ public class PlayableActivity extends Activity implements
     @Override
     public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
         Log.d(TAG, "onSurfaceTextureDestroyed: ");
-        return false;
+        mediaPlayer.release();
+        return true;
     }
 
     @Override
@@ -149,7 +163,6 @@ public class PlayableActivity extends Activity implements
 
     @Override
     public void onPrepared(MediaPlayer mp) {
-        Log.d(TAG, "onPrepared: ");
         mp.start();
     }
 
@@ -216,7 +229,7 @@ public class PlayableActivity extends Activity implements
     }
 
     void onMediaPlayerProgress(int currentPoint) {
-        Log.d(TAG, "onMediaPlayerProgress: ");
+        Log.d(TAG, "onMediaPlayerProgress: " + currentPoint);
         int nextStep = monitoring.nextPoint(currentPoint);
         if (nextStep == Monitoring.INVALID) {
             return;
@@ -230,7 +243,6 @@ public class PlayableActivity extends Activity implements
 
         mediaPlayer.seekTo(nextStep);
         timeHandler.refreshStartTime(nextStep);
-        Log.d(TAG, "onMediaPlayerProgress: loop");
     }
 
 

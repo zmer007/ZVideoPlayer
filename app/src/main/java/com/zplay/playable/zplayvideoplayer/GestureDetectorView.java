@@ -54,7 +54,7 @@ public final class GestureDetectorView extends View {
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, height);
         params.topMargin = (int) dstRect.top;
         params.leftMargin = (int) dstRect.left;
-        setBackgroundColor(0x8800ff00);
+//        setBackgroundColor(0x8800ff00);
         setLayoutParams(params);
     }
 
